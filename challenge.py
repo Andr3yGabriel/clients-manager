@@ -4,6 +4,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 
 connection = sqlite3.connect(ROOT_DIR / "clients.sqlite")
+print(connection)
 cursor = connection.cursor()
 cursor.row_factory = sqlite3.Row
 
@@ -18,7 +19,8 @@ def create_table(connection, cursor):
             CREATE TABLE IF NOT EXISTS clients_pf (
                 document VARCHAR(11) PRIMARY KEY UNIQUE,
                 name VARCHAR(100) NOT NULL,
-                email VARCHAR(150) NOT NULL
+                email VARCHAR(150) NOT NULL,
+                balance REAL DEFAULT 0.0
             )
             """
         )
@@ -27,7 +29,8 @@ def create_table(connection, cursor):
             CREATE TABLE IF NOT EXISTS clients_pj (
                 document VARCHAR(14) PRIMARY KEY UNIQUE,
                 name VARCHAR(100) NOT NULL,
-                email VARCHAR(150) NOT NULL
+                email VARCHAR(150) NOT NULL,
+                balance REAL DEFAULT 0.0
             )
             """
         )
@@ -109,6 +112,87 @@ def list_clients(cursor, client_type):
         return None
 
 
+def deposit(cursor, client_type, document, amount):
+    """
+    Deposit money into a client's account.
+    """
+    try:
+        if client_type == "pf":
+            cursor.execute(
+                "UPDATE clients_pf SET balance = balance + ? WHERE document = ?",
+                (amount, document),
+            )
+        elif client_type == "pj":
+            cursor.execute(
+                "UPDATE clients_pj SET balance = balance + ? WHERE document = ?",
+                (amount, document),
+            )
+        connection.commit()
+        return True
+    except Exception as e:
+        print(f"\nError depositing money: {e}")
+        return False
+
+
+def withdraw(cursor, client_type, document, amount):
+    """
+    Withdraw money from a client's account.
+    """
+    try:
+        if client_type == "pf":
+            if amount <= 0:
+                print("Withdrawal amount must be positive.")
+                return False
+            cursor.execute(
+                "SELECT balance FROM clients_pf WHERE document = ?",
+                (document,),
+            )
+            current_balance = cursor.fetchone()
+            if current_balance and current_balance[0] >= amount:
+                cursor.execute(
+                    "UPDATE clients_pf SET balance = balance - ? WHERE document = ?",
+                    (amount, document),
+                )
+            else:
+                print("Insufficient funds.")
+                return False
+        elif client_type == "pj":
+            if amount <= 0:
+                print("Withdrawal amount must be positive.")
+                return False
+            cursor.execute(
+                "SELECT balance FROM clients_pj WHERE document = ?",
+                (document,),
+            )
+            current_balance = cursor.fetchone()
+            if current_balance and current_balance[0] >= amount:
+                cursor.execute(
+                    "UPDATE clients_pj SET balance = balance - ? WHERE document = ?",
+                    (amount, document),
+                )
+            else:
+                print("Insufficient funds.")
+                return False
+        connection.commit()
+        return True
+    except Exception as e:
+        print(f"Error withdrawing money: {e}")
+        return False
+
+
+def transfer(
+    cursor, client_type_from, document_from, client_type_to, document_to, amount
+):
+    """
+    Transfer money between clients.
+    """
+    if withdraw(cursor, client_type_from, document_from, amount):
+        deposit(cursor, client_type_to, document_to, amount)
+        print("\nTransfer successful.")
+    else:
+        print("\nTransfer failed.")
+
+
 def menu():
     """
     Display the menu and handle user input.
@@ -118,7 +202,10 @@ def menu():
         print("1. Register Client")
         print("2. Search Client")
         print("3. List Clients")
-        print("4. Exit")
+        print("4. Deposit")
+        print("5. Withdraw")
+        print("6. Transfer")
+        print("7. Exit")
         choice = input("=> ")
 
         if choice == "1":
@@ -146,6 +233,36 @@ def menu():
             else:
                 print("No clients found.")
         elif choice == "4":
+            document = input("Enter document (11 or 14 characters): ")
+            client_type = "pf" if len(document) == 11 else "pj"
+            amount = float(input("Enter amount to deposit: "))
+            if deposit(cursor, client_type, document, amount):
+                print("\nDeposit successful.")
+            else:
+                print("\nDeposit failed.")
+        elif choice == "5":
+            document = input("Enter document (11 or 14 characters): ")
+            client_type = "pf" if len(document) == 11 else "pj"
+            amount = float(input("Enter amount to withdraw: "))
+            if withdraw(cursor, client_type, document, amount):
+                print("\nWithdrawal successful.")
+            else:
+                print("\nWithdrawal failed.")
+        elif choice == "6":
+            document_from = input("Enter document (11 or 14 characters) of sender: ")
+            client_type_from = "pf" if len(document_from) == 11 else "pj"
+            document_to = input("Enter document (11 or 14 characters) of receiver: ")
+            client_type_to = "pf" if len(document_to) == 11 else "pj"
+            amount = float(input("Enter amount to transfer: "))
+            transfer(
+                cursor,
+                client_type_from,
+                document_from,
+                client_type_to,
+                document_to,
+                amount,
+            )
+        elif choice == "7":
             break
         else:
             print("Invalid choice. Please try again.")
